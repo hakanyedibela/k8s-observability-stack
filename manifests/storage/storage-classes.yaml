@@ -1,0 +1,62 @@
+# =============================================================================
+# Storage Class Examples for Different Platforms
+# Uncomment the one that matches your infrastructure
+# =============================================================================
+
+# --- RKE2 / k3s: local-path (default, already exists) ---
+# Usually pre-installed. No action needed.
+
+# --- kubeadm + Longhorn ---
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: longhorn
+#   annotations:
+#     storageclass.kubernetes.io/is-default-class: "true"
+# provisioner: driver.longhorn.io
+# reclaimPolicy: Retain
+# allowVolumeExpansion: true
+# volumeBindingMode: Immediate
+# parameters:
+#   numberOfReplicas: "2"
+#   staleReplicaTimeout: "2880"
+#   fromBackup: ""
+
+# --- kubeadm + NFS (nfs-subdir-external-provisioner) ---
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: nfs-client
+#   annotations:
+#     storageclass.kubernetes.io/is-default-class: "true"
+# provisioner: cluster.local/nfs-subdir-external-provisioner
+# reclaimPolicy: Retain
+# allowVolumeExpansion: true
+# parameters:
+#   archiveOnDelete: "true"
+
+# --- AWS EBS (gp3) ---
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: gp3
+# provisioner: ebs.csi.aws.com
+# parameters:
+#   type: gp3
+#   iops: "3000"
+#   throughput: "125"
+#   encrypted: "true"
+# reclaimPolicy: Retain
+# allowVolumeExpansion: true
+# volumeBindingMode: WaitForFirstConsumer
+
+# --- vSphere ---
+# apiVersion: storage.k8s.io/v1
+# kind: StorageClass
+# metadata:
+#   name: vsphere-csi
+# provisioner: csi.vsphere.vmware.com
+# parameters:
+#   storagepolicyname: "vSAN Default Storage Policy"
+# reclaimPolicy: Retain
+# allowVolumeExpansion: true

@@ -1,0 +1,20 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: run-tests
+  namespace: tekton-pipelines
+spec:
+  description: Run Go unit tests.
+  workspaces:
+    - name: source
+      description: Workspace containing the cloned repo
+  steps:
+    - name: test
+      image: golang:1.22-alpine
+      workingDir: "$(workspaces.source.path)/source/app"
+      script: |
+        #!/usr/bin/env sh
+        set -eu
+        echo "=== Running tests ==="
+        go test -v -race -count=1 ./...
+        echo "=== Tests passed ==="

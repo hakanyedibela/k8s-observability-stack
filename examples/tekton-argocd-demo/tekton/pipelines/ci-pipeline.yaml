@@ -1,0 +1,103 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: ci-pipeline
+  namespace: tekton-pipelines
+spec:
+  description: |
+    Full CI pipeline: clone → test → build image → update manifests.
+    After this pipeline runs, ArgoCD detects the manifest change and deploys.
+
+  params:
+    - name: git-url
+      type: string
+      description: Git repository URL
+    - name: git-revision
+      type: string
+      default: main
+    - name: image-name
+      type: string
+      description: "Full image name (e.g. registry.gitlab.com/user/demo-app)"
+    - name: overlay
+      type: string
+      default: dev
+      description: "Kustomize overlay to update (dev or prod)"
+
+  workspaces:
+    - name: shared-workspace
+      description: Shared across all tasks
+    - name: git-credentials
+      description: Git username/password for pushing manifest updates
+    - name: docker-credentials
+      description: Docker registry credentials for pushing images
+
+  tasks:
+    # ---------------------------------------------------------------
+    # Step 1: Clone the repository
+    # ---------------------------------------------------------------
+    - name: clone
+      taskRef:
+        name: git-clone
+      params:
+        - name: url
+          value: "$(params.git-url)"
+        - name: revision
+          value: "$(params.git-revision)"
+      workspaces:
+        - name: output
+          workspace: shared-workspace
+
+    # ---------------------------------------------------------------
+    # Step 2: Run unit tests
+    # ---------------------------------------------------------------
+    - name: test
+      taskRef:
+        name: run-tests
+      runAfter: ["clone"]
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+
+    # ---------------------------------------------------------------
+    # Step 3: Build and push the container image
+    #   Tag = git short SHA (from clone step output file)
+    # ---------------------------------------------------------------
+    - name: build-push
+      taskRef:
+        name: build-push-image
+      runAfter: ["test"]
+      params:
+        - name: image-name
+          value: "$(params.image-name)"
+        - name: image-tag
+          value: "$(tasks.clone.results.commit-sha)"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: docker-credentials
+          workspace: docker-credentials
+
+    # ---------------------------------------------------------------
+    # Step 4: Update Kustomize manifests with the new image tag
+    #   This commit triggers ArgoCD to sync.
+    # ---------------------------------------------------------------
+    - name: update-manifests
+      taskRef:
+        name: update-manifests
+      runAfter: ["build-push"]
+      params:
+        - name: git-url
+          value: "$(params.git-url)"
+        - name: git-revision
+          value: "$(params.git-revision)"
+        - name: image-name
+          value: "$(params.image-name)"
+        - name: image-tag
+          value: "$(tasks.clone.results.commit-sha)"
+        - name: overlay
+          value: "$(params.overlay)"
+      workspaces:
+        - name: source
+          workspace: shared-workspace
+        - name: git-credentials
+          workspace: git-credentials

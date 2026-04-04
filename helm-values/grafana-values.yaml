@@ -1,0 +1,206 @@
+# =============================================================================
+# Grafana Helm Values - Vanilla Kubernetes (RKE2 / kubeadm / k3s)
+# Chart: grafana/grafana
+# =============================================================================
+
+# --- Replicas ---
+replicas: 2
+
+# --- Admin credentials (from secret) ---
+admin:
+  existingSecret: grafana-admin-secret
+  userKey: admin-user
+  passwordKey: admin-password
+
+# --- PostgreSQL Database Backend ---
+grafana.ini:
+  server:
+    root_url: "http://grafana.${INGRESS_DOMAIN}"
+    enforce_domain: false
+  database:
+    type: postgres
+    host: "${GRAFANA_DB_HOST}:${GRAFANA_DB_PORT}"
+    name: "${GRAFANA_DB_NAME}"
+    user: "${GRAFANA_DB_USER}"
+    password: "${GRAFANA_DB_PASSWORD}"
+    ssl_mode: disable       # Use 'require' if PostgreSQL has TLS
+    max_open_conn: 50
+    max_idle_conn: 25
+    conn_max_lifetime: 14400
+  auth:
+    disable_login_form: false
+  security:
+    admin_user: "${GRAFANA_ADMIN_USER}"
+    cookie_secure: false    # Set true when TLS is enabled
+    strict_transport_security: false
+  users:
+    allow_sign_up: false
+    auto_assign_org: true
+    auto_assign_org_role: Viewer
+  analytics:
+    reporting_enabled: false
+    check_for_updates: false
+  log:
+    mode: console
+    level: info
+  unified_alerting:
+    enabled: true
+
+# --- Data Sources (auto-provisioned) ---
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      # Thanos as primary metrics source (global query)
+      - name: Thanos
+        type: prometheus
+        uid: thanos
+        url: http://thanos-query-frontend:9090
+        access: proxy
+        isDefault: true
+        jsonData:
+          timeInterval: 30s
+          httpMethod: POST
+
+      # Direct Prometheus (short-term, real-time)
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        url: http://prometheus-kube-prometheus-prometheus:9090
+        access: proxy
+        jsonData:
+          timeInterval: 30s
+          httpMethod: POST
+
+      # Loki for logs
+      - name: Loki
+        type: loki
+        uid: loki
+        url: http://loki-gateway:80
+        access: proxy
+        jsonData:
+          maxLines: 1000
+
+      # Alertmanager
+      - name: Alertmanager
+        type: alertmanager
+        uid: alertmanager
+        url: http://prometheus-kube-prometheus-alertmanager:9093
+        access: proxy
+        jsonData:
+          implementation: prometheus
+
+# --- Dashboard Providers ---
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+      - name: infrastructure
+        orgId: 1
+        folder: Infrastructure
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/infrastructure
+
+# --- Pre-built Dashboards ---
+dashboards:
+  default:
+    kubernetes-cluster:
+      gnetId: 7249
+      revision: 1
+      datasource: Thanos
+    node-exporter:
+      gnetId: 1860
+      revision: 37
+      datasource: Thanos
+    prometheus-overview:
+      gnetId: 3662
+      revision: 2
+      datasource: Thanos
+  infrastructure:
+    thanos-overview:
+      gnetId: 12937
+      revision: 1
+      datasource: Thanos
+    loki-overview:
+      gnetId: 13407
+      revision: 1
+      datasource: Prometheus
+
+# --- Resources ---
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# --- Persistence ---
+persistence:
+  enabled: false
+
+# --- Security Context ---
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 472
+  runAsGroup: 472
+  fsGroup: 472
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  readOnlyRootFilesystem: false
+
+# --- Service ---
+service:
+  type: ClusterIP
+  port: 3000
+
+# --- Pod Disruption Budget ---
+podDisruptionBudget:
+  minAvailable: 1
+
+# --- Sidecar for ConfigMap dashboards ---
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"
+    searchNamespace: ALL
+  datasources:
+    enabled: true
+    label: grafana_datasource
+    labelValue: "1"
+
+# --- Plugins ---
+plugins:
+  - grafana-piechart-panel
+  - grafana-clock-panel
+
+# --- Service Monitor ---
+serviceMonitor:
+  enabled: true
+
+# --- Ingress ---
+ingress:
+  enabled: true
+  ingressClassName: "${INGRESS_CLASS}"
+  hosts:
+    - grafana.${INGRESS_DOMAIN}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"

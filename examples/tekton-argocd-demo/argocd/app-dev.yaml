@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app-dev
+  namespace: argocd
+spec:
+  project: demo-project
+
+  source:
+    # !! CHANGE THIS to your Git repo URL !!
+    repoURL: https://gitlab.com/YOUR_GROUP/YOUR_PROJECT.git
+    targetRevision: main
+    path: k8s/overlays/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo-dev
+
+  syncPolicy:
+    # Auto-sync: when Tekton pushes a new image tag, ArgoCD deploys it automatically
+    automated:
+      prune: true       # Delete resources that are no longer in Git
+      selfHeal: true    # Revert manual changes made outside of Git
+      allowEmpty: false
+
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

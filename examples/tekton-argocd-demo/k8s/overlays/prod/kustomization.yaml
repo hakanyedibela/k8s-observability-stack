@@ -1,0 +1,30 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: demo-prod
+
+resources:
+  - ../../base
+
+# Image tag is promoted manually or via a separate pipeline
+images:
+  - name: REGISTRY/USERNAME/demo-app
+    newName: REGISTRY/USERNAME/demo-app  # Replace with your registry
+    newTag: latest                        # Update to promote a specific version
+
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: demo-app
+      spec:
+        replicas: 3
+  - patch: |
+      apiVersion: autoscaling/v2
+      kind: HorizontalPodAutoscaler
+      metadata:
+        name: demo-app
+      spec:
+        minReplicas: 3
+        maxReplicas: 10

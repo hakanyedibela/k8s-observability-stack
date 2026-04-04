@@ -1,0 +1,70 @@
+# =============================================================================
+# MinIO Helm Values - Local S3-Compatible Storage for Development
+# Chart: bitnami/minio
+# =============================================================================
+
+# --- Image (use official MinIO image — bitnami tags are rotated/removed) ---
+image:
+  registry: docker.io
+  repository: minio/minio
+  tag: latest
+
+# --- Authentication ---
+auth:
+  rootUser: "${S3_ACCESS_KEY}"
+  rootPassword: "${S3_SECRET_KEY}"
+
+# --- Mode ---
+mode: standalone
+
+# --- Persistence ---
+persistence:
+  enabled: true
+  storageClass: "${STORAGE_CLASS}"
+  size: 50Gi
+
+# --- Resources ---
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# --- Default Buckets ---
+defaultBuckets: "${S3_BUCKET_THANOS},${S3_BUCKET_LOKI_CHUNKS},${S3_BUCKET_LOKI_RULER},${S3_BUCKET_LOKI_ADMIN}"
+
+# --- Service ---
+service:
+  type: ClusterIP
+  ports:
+    api: 9000
+    console: 9001
+
+# --- Security Context ---
+podSecurityContext:
+  enabled: true
+  runAsNonRoot: true
+  runAsUser: 1001
+  fsGroup: 1001
+  seccompProfile:
+    type: RuntimeDefault
+
+containerSecurityContext:
+  enabled: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+
+# --- Ingress for MinIO Console (optional) ---
+ingress:
+  enabled: true
+  ingressClassName: "${INGRESS_CLASS}"
+  hostname: minio.${INGRESS_DOMAIN}
+
+# --- Metrics ---
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true

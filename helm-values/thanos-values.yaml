@@ -1,0 +1,196 @@
+# =============================================================================
+# Thanos Helm Values - Vanilla Kubernetes (RKE2 / kubeadm / k3s)
+# Chart: bitnami/thanos
+# =============================================================================
+
+# --- Global ---
+global:
+  storageClass: "${STORAGE_CLASS}"
+
+# --- Object Storage Config ---
+existingObjstoreSecret: thanos-objstore-secret
+existingObjstoreSecretItems:
+  - key: objstore.yml
+    path: objstore.yml
+
+# --- Query (entry point for Grafana) ---
+query:
+  enabled: true
+  replicaCount: 2
+  replicaLabel:
+    - prometheus_replica
+    - rule_replica
+  dnsDiscovery:
+    sidecarsService: prometheus-kube-prometheus-thanos-discovery
+    sidecarsNamespace: "${NAMESPACE}"
+  stores:
+    - dnssrv+_grpc._tcp.thanos-storegateway.${NAMESPACE}.svc.cluster.local
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  pdb:
+    create: true
+    minAvailable: 1
+  service:
+    type: ClusterIP
+
+# --- Query Frontend (caching layer) ---
+queryFrontend:
+  enabled: true
+  replicaCount: 2
+  config: |
+    type: IN-MEMORY
+    config:
+      max_size: 512MB
+      max_size_items: 1000
+      validity: 10m
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
+  pdb:
+    create: true
+    minAvailable: 1
+
+# --- Store Gateway (serves historical data from S3) ---
+storegateway:
+  enabled: true
+  replicaCount: 2
+  config: |
+    type: IN-MEMORY
+    config:
+      max_size: 1GB
+      max_item_size: 128MB
+  persistence:
+    enabled: true
+    storageClass: "${STORAGE_CLASS}"
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "1"
+      memory: 4Gi
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+  pdb:
+    create: true
+    minAvailable: 1
+
+# --- Compactor (compacts and downsamples blocks in S3) ---
+compactor:
+  enabled: true
+  retentionResolutionRaw: 30d
+  retentionResolution5m: 90d
+  retentionResolution1h: 365d
+  persistence:
+    enabled: true
+    storageClass: "${STORAGE_CLASS}"
+    size: 50Gi
+  resources:
+    requests:
+      cpu: 500m
+      memory: 2Gi
+    limits:
+      cpu: "1"
+      memory: 4Gi
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+
+# --- Ruler ---
+ruler:
+  enabled: true
+  replicaCount: 2
+  alertmanagers:
+    - http://prometheus-kube-prometheus-alertmanager.${NAMESPACE}.svc.cluster.local:9093
+  config: |
+    groups: []
+  persistence:
+    enabled: true
+    storageClass: "${STORAGE_CLASS}"
+    size: 10Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+  podSecurityContext:
+    enabled: true
+    runAsNonRoot: true
+    runAsUser: 1001
+    fsGroup: 1001
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    enabled: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop: ["ALL"]
+  pdb:
+    create: true
+    minAvailable: 1
+
+# --- Metrics ---
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true

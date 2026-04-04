@@ -1,0 +1,44 @@
+# =============================================================================
+# TriggerBinding — extracts values from the incoming webhook JSON payload
+# =============================================================================
+# GitLab push event payload:
+#   .repository.git_http_url  → repo URL
+#   .ref                      → refs/heads/main
+#   .checkout_sha             → full commit SHA
+#
+# GitHub push event payload:
+#   .repository.clone_url     → repo URL
+#   .ref                      → refs/heads/main
+#   .after                    → full commit SHA
+# =============================================================================
+
+# --- GitLab variant ---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: gitlab-push-binding
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: git-url
+      value: $(body.repository.git_http_url)
+    - name: git-revision
+      value: main
+    - name: git-commit
+      value: $(body.checkout_sha)
+
+---
+# --- GitHub variant ---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: github-push-binding
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: git-url
+      value: $(body.repository.clone_url)
+    - name: git-revision
+      value: main
+    - name: git-commit
+      value: $(body.after)

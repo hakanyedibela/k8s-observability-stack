@@ -1,0 +1,144 @@
+# =============================================================================
+# Network Policies for Observability Stack (vanilla Kubernetes)
+# =============================================================================
+---
+# Allow Grafana to reach Thanos, Loki, Alertmanager, and PostgreSQL
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-grafana-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: thanos
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: loki
+        - podSelector:
+            matchLabels:
+              app: alertmanager
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 9093
+        - protocol: TCP
+          port: 5432
+    # Allow DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# Allow Prometheus to scrape all pods in the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 9100
+        - protocol: TCP
+          port: 3100
+---
+# Allow Thanos internal gRPC communication
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-thanos-internal
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: thanos
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: thanos
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - protocol: TCP
+          port: 10901
+        - protocol: TCP
+          port: 10902
+---
+# Allow Promtail to push to Loki gateway
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-promtail-to-loki
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: loki
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: promtail
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: promtail
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 3100
+---
+# Allow ingress controller to reach services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 3000   # Grafana
+        - protocol: TCP
+          port: 9090   # Thanos/Prometheus
+        - protocol: TCP
+          port: 9093   # Alertmanager
+        - protocol: TCP
+          port: 9001   # MinIO console

@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: demo-app-prod
+  namespace: argocd
+spec:
+  project: demo-project
+
+  source:
+    # !! CHANGE THIS to your Git repo URL !!
+    repoURL: https://gitlab.com/YOUR_GROUP/YOUR_PROJECT.git
+    targetRevision: main
+    path: k8s/overlays/prod
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: demo-prod
+
+  syncPolicy:
+    # Prod does NOT auto-sync — requires manual approval in the ArgoCD UI or CLI
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+
+    retry:
+      limit: 3
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

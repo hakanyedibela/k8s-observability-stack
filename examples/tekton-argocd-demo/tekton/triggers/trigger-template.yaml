@@ -1,0 +1,46 @@
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: ci-pipeline-template
+  namespace: tekton-pipelines
+spec:
+  params:
+    - name: git-url
+      description: The Git repository URL
+    - name: git-revision
+      description: The branch to build
+      default: main
+
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: ci-pipeline-
+        namespace: tekton-pipelines
+      spec:
+        pipelineRef:
+          name: ci-pipeline
+        params:
+          - name: git-url
+            value: $(tt.params.git-url)
+          - name: git-revision
+            value: $(tt.params.git-revision)
+          - name: image-name
+            # !! CHANGE THIS to your registry/image !!
+            value: "registry.gitlab.com/YOUR_GROUP/YOUR_PROJECT/demo-app"
+          - name: overlay
+            value: dev
+        workspaces:
+          - name: shared-workspace
+            volumeClaimTemplate:
+              spec:
+                accessModes: ["ReadWriteOnce"]
+                resources:
+                  requests:
+                    storage: 1Gi
+          - name: git-credentials
+            secret:
+              secretName: git-credentials
+          - name: docker-credentials
+            secret:
+              secretName: registry-credentials

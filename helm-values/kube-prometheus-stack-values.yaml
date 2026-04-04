@@ -1,0 +1,190 @@
+# =============================================================================
+# kube-prometheus-stack Helm Values - Vanilla Kubernetes (RKE2 / kubeadm / k3s)
+# Chart: prometheus-community/kube-prometheus-stack
+# =============================================================================
+
+# --- Global ---
+global:
+  rbac:
+    create: true
+    pspEnabled: false
+
+# --- Prometheus Operator ---
+prometheusOperator:
+  enabled: true
+  admissionWebhooks:
+    enabled: true
+    patch:
+      enabled: true
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# --- Prometheus ---
+prometheus:
+  enabled: true
+  prometheusSpec:
+    replicas: 2
+    retention: 6h          # Short retention — Thanos handles long-term
+    retentionSize: "10GB"
+    scrapeInterval: 30s
+    evaluationInterval: 30s
+
+    # Thanos sidecar integration
+    thanos:
+      image: quay.io/thanos/thanos:v0.35.1
+      objectStorageConfig:
+        existingSecret:
+          name: thanos-objstore-secret
+          key: objstore.yml
+
+    # Storage
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "${STORAGE_CLASS}"
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    # Resources
+    resources:
+      requests:
+        cpu: "2"
+        memory: 8Gi
+      limits:
+        cpu: "4"
+        memory: 16Gi
+
+    # Pod disruption budget
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+
+    # Standard Kubernetes security context
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 2000
+      seccompProfile:
+        type: RuntimeDefault
+
+    # Service discovery — pick up all ServiceMonitors/PodMonitors
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    # External labels for Thanos deduplication
+    externalLabels:
+      cluster: k8s-prod
+      environment: production
+
+  service:
+    type: ClusterIP
+
+# --- Alertmanager ---
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 2
+    retention: 120h
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: "${STORAGE_CLASS}"
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+    securityContext:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 2000
+      seccompProfile:
+        type: RuntimeDefault
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+
+# --- Grafana (disabled — we deploy it separately for full control) ---
+grafana:
+  enabled: false
+
+# --- Node Exporter ---
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# --- Kube State Metrics ---
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# --- Control Plane Monitoring ---
+# Enable for kubeadm (components are reachable); disable for managed K8s
+kubeControllerManager:
+  enabled: true
+  endpoints: []        # Auto-discovered via service discovery
+  service:
+    enabled: true
+    port: 10257
+    targetPort: 10257
+  serviceMonitor:
+    https: true
+    insecureSkipVerify: true
+
+kubeScheduler:
+  enabled: true
+  endpoints: []
+  service:
+    enabled: true
+    port: 10259
+    targetPort: 10259
+  serviceMonitor:
+    https: true
+    insecureSkipVerify: true
+
+kubeEtcd:
+  enabled: true
+  endpoints: []
+  service:
+    enabled: true
+    port: 2381
+    targetPort: 2381
+
+kubeProxy:
+  enabled: true
+  service:
+    enabled: true
+    port: 10249
+    targetPort: 10249

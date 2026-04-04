@@ -1,0 +1,40 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: build-push-image
+  namespace: tekton-pipelines
+spec:
+  description: Build a container image with Kaniko and push it to a registry.
+  params:
+    - name: image-name
+      type: string
+      description: "Full image name (e.g. registry.gitlab.com/user/demo-app)"
+    - name: image-tag
+      type: string
+      description: "Image tag (e.g. abc1234 or v1.0.0)"
+    - name: dockerfile
+      type: string
+      default: ./app/Dockerfile
+    - name: context
+      type: string
+      default: ./app
+  workspaces:
+    - name: source
+      description: Workspace containing the cloned repo
+    - name: docker-credentials
+      description: Secret with .dockerconfigjson for registry auth
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:v1.23.2
+      args:
+        - --dockerfile=$(params.dockerfile)
+        - --context=$(workspaces.source.path)/source/$(params.context)
+        - --destination=$(params.image-name):$(params.image-tag)
+        - --destination=$(params.image-name):latest
+        - --cache=true
+        - --cache-ttl=24h
+        - --snapshot-mode=redo
+        - --compressed-caching=false
+      env:
+        - name: DOCKER_CONFIG
+          value: $(workspaces.docker-credentials.path)
