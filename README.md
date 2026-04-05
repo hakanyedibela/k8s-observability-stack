@@ -1,11 +1,16 @@
 # Kubernetes Observability Stack (RKE2 / kubeadm / k3s)
 
-Production-grade observability stack for vanilla Kubernetes clusters:
+Production-grade observability stack for vanilla Kubernetes clusters, deployed as a single **Helm umbrella chart**:
+
 - **Prometheus** (via kube-prometheus-stack) - Metrics collection and alerting
 - **Thanos** - Long-term metrics storage with S3, global query, and HA
 - **Loki** - Log aggregation with S3 backend
+- **Promtail** - Log shipping from all nodes
 - **Grafana** - Unified dashboards and visualization
-- **NGINX Ingress** - TLS-terminated ingress for all UIs
+- **PostgreSQL** - Grafana database backend
+- **MinIO** (optional) - Local S3-compatible storage
+- **ArgoCD** (optional) - GitOps continuous delivery
+- **Tekton** (optional) - CI/CD pipelines
 
 ## Architecture
 
@@ -49,54 +54,144 @@ Production-grade observability stack for vanilla Kubernetes clusters:
 - PostgreSQL database (for Grafana) — or use the bundled one
 - cert-manager (optional, for auto TLS)
 
-### For local development with MinIO
-
-If you don't have S3, step 01 can optionally install MinIO for you.
-
 ## Quick Start
+
+### Option 1: Direct Helm install (recommended)
+
+```bash
+# 1. Build chart dependencies
+helm dependency build ./charts/observability-stack
+
+# 2. Deploy with default values
+helm install observability ./charts/observability-stack \
+  -n observability --create-namespace
+
+# 3. Or deploy with custom values
+helm install observability ./charts/observability-stack \
+  -n observability --create-namespace \
+  -f my-values.yaml
+```
+
+### Option 2: Deploy script with .env file
 
 ```bash
 # 1. Copy and edit the environment config
 cp .env.example .env
 vi .env
 
-# 2. Deploy everything at once
-./scripts/deploy-all.sh
+# 2. Deploy using .env overrides
+./scripts/deploy.sh --from-env
 
-# 3. Verify
-./scripts/09-verify.sh
+# 3. Deploy with optional components
+./scripts/deploy.sh --from-env --with-argocd --with-tekton
 ```
 
-## Step-by-Step Deployment
-
-Each component can be deployed independently in dependency order:
-
-| Script | Component | Depends on |
-|--------|-----------|------------|
-| `00-prereqs.sh` | Namespace, Helm repos, Prometheus CRDs | — |
-| `01-minio.sh` | MinIO (optional local S3) | 00 |
-| `02-secrets.sh` | Thanos + Grafana secrets | 00 |
-| `03-postgresql.sh` | PostgreSQL (Grafana DB) | 00 |
-| `04-prometheus.sh` | kube-prometheus-stack | 00, 02 (thanos secret) |
-| `05-thanos.sh` | Thanos | 00, 02, 04 |
-| `06-loki.sh` | Loki | 00, 01 or external S3 |
-| `07-promtail.sh` | Promtail | 00, 06 |
-| `08-grafana.sh` | Grafana | 00, 02, 03, 04, 05, 06 |
-| `09-verify.sh` | Health check | all above |
-
-Example — deploy only Prometheus and Thanos (assuming you already have S3):
+### Option 3: Deploy script without .env
 
 ```bash
-./scripts/00-prereqs.sh
-./scripts/02-secrets.sh
-./scripts/04-prometheus.sh
-./scripts/05-thanos.sh
+# Deploy with default values (edit charts/observability-stack/values.yaml first)
+./scripts/deploy.sh
+
+# Deploy with extra values file
+./scripts/deploy.sh -f values-prod.yaml
 ```
+
+## Deploy Script Options
+
+```
+./scripts/deploy.sh [OPTIONS]
+
+Options:
+  --from-env          Generate Helm overrides from .env file
+  --with-argocd       Enable ArgoCD deployment
+  --with-tekton       Install Tekton Pipelines
+  --with-all          Enable ArgoCD + Tekton
+  --namespace, -n     Target namespace (default: observability)
+  --values, -f        Additional values file(s)
+```
+
+## Chart Structure
+
+```
+charts/observability-stack/
+├── Chart.yaml              # Dependencies (all sub-charts)
+├── values.yaml             # Consolidated configuration
+└── templates/
+    ├── _helpers.tpl        # Template helpers
+    ├── secrets.yaml        # Thanos objstore + Grafana admin secrets
+    ├── ingress.yaml        # Thanos, Prometheus, Alertmanager ingress
+    └── network-policies.yaml
+```
+
+### Sub-Charts (Helm Dependencies)
+
+| Component | Chart | Version |
+|-----------|-------|---------|
+| MinIO Operator | minio/operator | 6.0.4 |
+| MinIO Tenant | minio/tenant | 6.0.4 |
+| PostgreSQL | bitnami/postgresql | 16.4.1 |
+| Prometheus | prometheus-community/kube-prometheus-stack | 67.4.0 |
+| Thanos | bitnami/thanos | 15.7.27 |
+| Loki | grafana/loki | 6.24.0 |
+| Promtail | grafana/promtail | 6.16.6 |
+| Grafana | grafana/grafana | 8.8.2 |
+| ArgoCD | argo/argo-cd | 9.4.17 |
 
 ## Configuration
 
-All sensitive values are managed via `.env` file (never committed).
-Helm values are in `helm-values/` — adjust resource limits, storage classes, replicas.
+All configuration is in `charts/observability-stack/values.yaml`. Key sections:
+
+### Top-level settings (used by templates)
+
+```yaml
+s3:
+  endpoint: "http://10.211.55.28:9000"
+  accessKey: minioadmin
+  secretKey: minioadmin
+  # ...
+
+grafanaDb:
+  host: "grafana-postgres-postgresql"
+  password: "change-me"
+
+ingress:
+  domain: observability.local
+  className: nginx
+```
+
+### Enable/disable components
+
+```yaml
+minio:
+  enabled: false        # Set true for local S3
+
+argo-cd:
+  enabled: false        # Set true for GitOps
+
+networkPolicies:
+  enabled: true
+
+ingressResources:
+  enabled: true
+```
+
+### Per-environment overrides
+
+Create environment-specific files:
+
+```bash
+# values-prod.yaml
+helm install observability ./charts/observability-stack \
+  -n observability -f values-prod.yaml
+```
+
+Or generate overrides from `.env`:
+
+```bash
+./scripts/generate-values.sh > /tmp/overrides.yaml
+helm install observability ./charts/observability-stack \
+  -n observability -f /tmp/overrides.yaml
+```
 
 ### S3 Buckets Required
 
@@ -117,10 +212,23 @@ Helm values are in `helm-values/` — adjust resource limits, storage classes, r
 | k3s | `local-path` |
 | AWS (EKS/kops) | `gp3` |
 
-Set `STORAGE_CLASS` in `.env` to match your cluster.
+## Upgrade
+
+```bash
+helm upgrade observability ./charts/observability-stack \
+  -n observability -f my-values.yaml
+```
 
 ## Uninstall
 
 ```bash
-./scripts/99-uninstall.sh
+# Via script (handles Tekton + PVCs + namespace cleanup)
+./scripts/uninstall.sh
+
+# Or via Helm directly
+helm uninstall observability -n observability
 ```
+
+## CI/CD Example
+
+See [examples/tekton-argocd-demo/](examples/tekton-argocd-demo/) for a full CI/CD pipeline example using Tekton + ArgoCD.
